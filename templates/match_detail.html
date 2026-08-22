@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Match Detail — Reconciliation{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom:20px">
+  {% if match.ledger_transaction %}{{ match.ledger_transaction.external_id }}{% endif %}
+  {% if match.ledger_transaction and match.statement_transaction %} ↔ {% endif %}
+  {% if match.statement_transaction %}{{ match.statement_transaction.external_id }}{% endif %}
+</h2>
+
+<p style="margin-bottom:16px">
+  Status:
+  {% if match.status == 'matched_ok' %}
+    <span class="badge badge-ok">Matched OK</span>
+  {% elif match.status == 'matched_with_differences' %}
+    <span class="badge badge-warn">Matched with Differences</span>
+  {% elif match.status == 'manually_matched' %}
+    <span class="badge badge-info">Manually Matched</span>
+  {% else %}
+    <span class="badge">{{ match.status }}</span>
+  {% endif %}
+</p>
+
+{% if match.field_diffs %}
+<div class="card">
+  <h2>Field Comparison</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Field</th>
+        <th>Ledger</th>
+        <th>Statement</th>
+        <th>Difference</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in match.field_diffs %}
+      <tr>
+        <td><strong>{{ d.field_name }}</strong></td>
+        <td>{{ d.ledger_value }}</td>
+        <td>{{ d.statement_value }}</td>
+        <td>{{ d.difference or '—' }}</td>
+        <td>
+          {% if d.within_tolerance %}
+            <span class="diff-ok">OK</span>
+          {% else %}
+            <span class="diff-bad">DIFF</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="actions">
+  <a href="{{ url_for('run_detail', run_id=run_id) }}" class="btn btn-secondary">Back to Run</a>
+</div>
+{% endblock %}

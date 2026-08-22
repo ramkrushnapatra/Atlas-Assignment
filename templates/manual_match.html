@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Manual Match — Reconciliation{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom:20px">Manual Match — Run #{{ run_id }}</h2>
+
+<form method="post">
+  <div class="match-grid">
+    <div class="card">
+      <h2>Unmatched Ledger</h2>
+      {% if unmatched_ledger %}
+      <ul class="match-list">
+        {% for m in unmatched_ledger %}
+        <li>
+          <label>
+            <input type="radio" name="ledger_id" value="{{ m.ledger_transaction.external_id }}">
+            <strong>{{ m.ledger_transaction.external_id }}</strong>
+            — {{ m.ledger_transaction.instrument }}
+            {{ m.ledger_transaction.side }}
+            qty={{ m.ledger_transaction.quantity }}
+            ${{ m.ledger_transaction.gross_amount }}
+          </label>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">No unmatched ledger rows.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Unmatched Statement</h2>
+      {% if unmatched_statement %}
+      <ul class="match-list">
+        {% for m in unmatched_statement %}
+        <li>
+          <label>
+            <input type="radio" name="statement_id" value="{{ m.statement_transaction.external_id }}">
+            <strong>{{ m.statement_transaction.external_id }}</strong>
+            — {{ m.statement_transaction.instrument }}
+            {{ m.statement_transaction.side }}
+            qty={{ m.statement_transaction.quantity }}
+            ${{ m.statement_transaction.gross_amount }}
+          </label>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">No unmatched statement rows.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="actions">
+    <button type="submit" name="action" value="match" class="btn btn-success">Match Selected</button>
+    <a href="{{ url_for('run_detail', run_id=run_id) }}" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+
+{% if unmatched_ledger or unmatched_statement %}
+<div class="card" style="margin-top:24px">
+  <h2>Accept as Orphan</h2>
+  <p style="margin-bottom:12px">Confirm a row genuinely has no pair on the other side.</p>
+  <form method="post">
+    {% for m in unmatched_ledger %}
+    <label style="display:block;margin-bottom:8px">
+      <input type="radio" name="orphan_choice" value="ledger:{{ m.ledger_transaction.external_id }}">
+      Ledger: {{ m.ledger_transaction.external_id }} — {{ m.ledger_transaction.instrument }}
+    </label>
+    {% endfor %}
+    {% for m in unmatched_statement %}
+    <label style="display:block;margin-bottom:8px">
+      <input type="radio" name="orphan_choice" value="statement:{{ m.statement_transaction.external_id }}">
+      Statement: {{ m.statement_transaction.external_id }} — {{ m.statement_transaction.instrument }}
+    </label>
+    {% endfor %}
+    <input type="hidden" name="source_system" id="orphan_source">
+    <input type="hidden" name="external_id" id="orphan_id">
+    <br>
+    <button type="submit" name="action" value="accept_orphan" class="btn btn-danger"
+      onclick="var v=document.querySelector('input[name=orphan_choice]:checked');if(v){var p=v.value.split(':');document.getElementById('orphan_source').value=p[0];document.getElementById('orphan_id').value=p[1];}">
+      Accept as Orphan
+    </button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

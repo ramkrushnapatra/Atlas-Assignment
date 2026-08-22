@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ run.id }} — Reconciliation{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom:20px">Run #{{ run.id }} — {{ run.started_at.strftime('%Y-%m-%d %H:%M') }}</h2>
+
+<div class="summary-grid">
+  <div class="summary-card ok">
+    <div class="count">{{ counts.get('matched_ok', 0) }}</div>
+    <div class="label">Matched OK</div>
+  </div>
+  <div class="summary-card warn">
+    <div class="count">{{ counts.get('matched_with_differences', 0) }}</div>
+    <div class="label">With Differences</div>
+  </div>
+  <div class="summary-card bad">
+    <div class="count">{{ counts.get('unmatched_ledger', 0) }}</div>
+    <div class="label">Unmatched Ledger</div>
+  </div>
+  <div class="summary-card bad">
+    <div class="count">{{ counts.get('unmatched_statement', 0) }}</div>
+    <div class="label">Unmatched Statement</div>
+  </div>
+  <div class="summary-card">
+    <div class="count">{{ counts.get('manually_matched', 0) }}</div>
+    <div class="label">Manual Matches</div>
+  </div>
+</div>
+
+<div class="actions">
+  <a href="{{ url_for('manual_match', run_id=run.id) }}" class="btn">Manual Match</a>
+  <a href="{{ url_for('index') }}" class="btn btn-secondary">Back to Dashboard</a>
+</div>
+
+<div class="card" style="margin-top:24px">
+  <h2>All Results</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Ledger ID</th>
+        <th>Statement ID</th>
+        <th>Instrument</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in all_matches %}
+      <tr>
+        <td>
+          {% if m.status == 'matched_ok' %}
+            <span class="badge badge-ok">Matched OK</span>
+          {% elif m.status == 'matched_with_differences' %}
+            <span class="badge badge-warn">Differences</span>
+          {% elif m.status == 'unmatched_ledger' %}
+            <span class="badge badge-bad">Unmatched Ledger</span>
+          {% elif m.status == 'unmatched_statement' %}
+            <span class="badge badge-bad">Unmatched Statement</span>
+          {% elif m.status == 'manually_matched' %}
+            <span class="badge badge-info">Manual Match</span>
+          {% else %}
+            <span class="badge">{{ m.status }}</span>
+          {% endif %}
+        </td>
+        <td>{{ m.ledger_transaction.external_id if m.ledger_transaction else '—' }}</td>
+        <td>{{ m.statement_transaction.external_id if m.statement_transaction else '—' }}</td>
+        <td>
+          {% if m.ledger_transaction %}{{ m.ledger_transaction.instrument }}
+          {% elif m.statement_transaction %}{{ m.statement_transaction.instrument }}
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if m.ledger_transaction or m.statement_transaction %}
+            <a href="{{ url_for('match_detail', run_id=run.id, match_id=m.id) }}" class="btn btn-secondary">View</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
