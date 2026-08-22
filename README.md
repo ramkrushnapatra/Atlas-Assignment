@@ -312,6 +312,3 @@ New format = new parser class in `parsers.py`. Rest of system unchanged.
 
 ---
 
-## License
-
-Take-home assignment submission.
