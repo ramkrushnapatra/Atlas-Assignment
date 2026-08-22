@@ -1,194 +1,247 @@
 # Reconciliation Problem — Take-Home Assignment B
 
-**Stack:** Python 3.9+, Flask, SQLAlchemy, SQLite, Jinja2 templates
+Daily reconciliation tool: compare our **ledger** CSV against a counterparty **statement** CSV, find mismatches, and let an operator resolve them manually. Manual decisions persist across runs.
+
+**Stack:** Python 3.9+, Flask, SQLAlchemy, SQLite, Jinja2 (server-rendered HTML)
 
 ---
 
-## How to Run
+## Prerequisites
+
+- Python 3.9 or higher
+- pip
+
+Check your version:
+
+```bash
+python --version
+pip --version
+```
+
+---
+
+## Setup & Run
+
+### 1. Clone the repo
+
+```bash
+git clone <your-repo-url>
+cd Atlas-Assignment
+```
+
+### 2. (Recommended) Create virtual environment
+
+```bash
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+# Mac/Linux
+source .venv/bin/activate
+```
+
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
-python app.py
-# open http://localhost:5000
 ```
 
+| Package | Purpose |
+|---|---|
+| `flask` | Web server + HTML UI |
+| `sqlalchemy` | Database ORM (SQLite) |
+| `python-dateutil` | Parse different date formats |
+| `pytest` | Run unit tests |
 
-### Daily workflow
+**Windows note:** If SQLAlchemy install fails, try:
 
-1. Upload ledger and/or statement CSV on the dashboard
-2. Click **Start Reconciliation Run**
-3. Review results — OK, differences, unmatched
-4. Click **View** to see field-level diffs
-5. Click **Manual Match** to pair rows or accept orphans
-6. Next day — repeat; step 5 decisions still apply
+```bash
+pip install sqlalchemy --only-binary :all:
+```
+
+### 4. Start the app
+
+```bash
+python app.py
+```
+
+Open: **http://localhost:5000**
+
+`reconciliation.db` is created automatically on first run (not committed to git).
+
+### 5. Run tests
+
+```bash
+python -m pytest tests/ -v
+```
+
+19 tests — core logic only (no database, no browser).
 
 ---
 
-## Project Structure
+## Quick test with sample data
+
+Sample files are included:
+
+```
+data/
+├── ledger.csv      ← upload as Ledger
+└── statement.csv   ← upload as Statement
+```
+
+**Steps:**
+
+1. Start app → open dashboard
+2. Upload `data/ledger.csv` → **Upload Ledger**
+3. Upload `data/statement.csv` → **Upload Statement**
+4. Click **Start Reconciliation Run**
+5. Review results:
+
+| Row | Expected result |
+|---|---|
+| T-1001 | Matched OK |
+| T-1011 | Matched with differences (price +$17) |
+| T-1015 | Matched OK (40 min time drift OK) |
+| T-1020 | Matched OK |
+| T-1016 | Unmatched ledger |
+| C-9001 | Unmatched statement |
+| T-1018 | Cancelled — excluded |
+
+6. Click **View** on T-1011 to see field diffs
+7. Click **Manual Match** to pair T-1016 ↔ C-9001 (optional)
+
+**Correction file checkbox:** Check only when re-uploading a fixed version of an earlier file. For first upload, leave unchecked.
+
+---
+
+## Assignment checklist
+
+| Requirement | Done | Where |
+|---|---|---|
+| Database design (tables) | ✅ | `reconciliation/db/models.py` — 5 tables |
+| Backend — load files, match, compare | ✅ | `reconciliation/services/service.py` |
+| Core logic testable without DB/browser | ✅ | `reconciliation/core/` |
+| UI — start run, see results | ✅ | `templates/run_detail.html` |
+| UI — inspect field diffs | ✅ | `templates/match_detail.html` |
+| UI — manual match | ✅ | `templates/manual_match.html` |
+| Tests for logic that matters | ✅ | `tests/` — 19 tests |
+| README — how to run, decisions, left out | ✅ | this file |
+| Sample data | ✅ | `data/ledger.csv`, `data/statement.csv` |
+
+---
+
+## Daily workflow
+
+1. Upload new ledger/statement CSVs (if arrived)
+2. **Start Reconciliation Run**
+3. Review matched OK / differences / unmatched
+4. **View** rows with differences
+5. **Manual Match** or **Accept as Orphan** for unresolved rows
+6. Tomorrow — repeat; manual decisions from step 5 still apply
+
+---
+
+## Project structure
 
 ```
 Atlas-Assignment/
 ├── app.py                    # Flask routes
-├── requirements.txt
-├── reconciliation.db         # auto-created
-├── templates/
-│   ├── base.html
-│   ├── index.html            # dashboard + upload
-│   ├── run_detail.html       # run results
-│   ├── match_detail.html     # field diffs
-│   └── manual_match.html
+├── requirements.txt          # pip dependencies
+├── .gitignore
+├── data/
+│   ├── ledger.csv            # sample ledger file
+│   └── statement.csv         # sample statement file
+├── tests/                    # unit tests (core logic)
+├── templates/                # HTML pages
 ├── static/style.css
 └── reconciliation/
-    ├── core/                 # pure logic, no DB
-    │   ├── canonical.py      # Txn, Match, Status, FieldDiff
-    │   ├── normalizer.py     # parse_dt, norm_side, norm_state
+    ├── core/                 # pure logic — no DB
+    │   ├── canonical.py      # Txn, Match, Status
+    │   ├── normalizer.py     # date/side/state parsing
     │   ├── parsers.py        # LedgerParser, StatementParser
-    │   ├── config.py         # Tolerance
+    │   ├── config.py         # Tolerance settings
     │   ├── comparator.py     # compare()
     │   └── matcher.py        # match()
     ├── db/
-    │   ├── connection.py     # engine, get_session, init_db
-    │   └── models.py         # 5 tables
+    │   ├── connection.py
+    │   └── models.py         # 5 SQLAlchemy tables
     └── services/
         └── service.py        # upload, start_run, resolutions
 ```
 
-| Layer | Does what | Imports |
-|---|---|---|
-| `core/` | parse, match, compare | nothing external |
-| `db/` | SQLite tables + sessions | core types only |
-| `services/` | wires core ↔ db | core + db |
-| `app.py` | HTTP + HTML | services |
-
-
-
----
-
-## Key Code Reference
-
-### Core types (`canonical.py`)
-
-| Name | Purpose |
+| Layer | Responsibility |
 |---|---|
-| `Txn` | normalized transaction row |
-| `Match` | one match result (status, ledger, statement, diffs) |
-| `Status` | `OK`, `DIFF`, `UNMATCHED_L`, `UNMATCHED_S`, `MANUAL`, `ORPHAN` |
-| `FieldDiff` | one field difference (`field`, `ledger_val`, `statement_val`, `ok`) |
-| `Source` | `LEDGER` or `STATEMENT` |
-
-Aliases kept for compatibility: `CanonicalTransaction = Txn`, `MatchStatus = Status`, etc.
-
-### Core functions
-
-| Function | File | What it does |
-|---|---|---|
-| `parse_csv(source, text)` | parsers.py | CSV → list of `Txn` |
-| `compare(a, b, tol)` | comparator.py | field-by-field diff |
-| `match(ledger, statement)` | matcher.py | auto-match + classify |
-| `upload(session, fname, content, src)` | service.py | save file + rows to DB |
-| `start_run(session)` | service.py | run reconciliation, save results |
-| `save_match(session, lid, sid)` | service.py | persist manual pair |
-| `save_orphan(session, src, eid)` | service.py | accept row has no pair |
-
-### Flask routes (`app.py`)
-
-| Route | Action |
-|---|---|
-| `GET /` | dashboard |
-| `POST /upload` | upload CSV |
-| `POST /run` | start reconciliation |
-| `GET /run/<id>` | run results |
-| `GET /run/<id>/match/<mid>` | field diffs |
-| `GET/POST /run/<id>/manual-match` | manual match / accept orphan |
-
----
-
-## Architecture
-
-```
-Browser → app.py → service.py → core (match/compare)
-                      ↕
-                    db (SQLite)
-```
-
-### Start run pipeline
-
-1. Load transactions from `transactions` table
-2. Load active rows from `manual_resolutions`
-3. Call `match()` — pure Python, no I/O
-4. Save results to `match_results` (diffs as JSON)
-5. Show results page
-
-### Upload pipeline
-
-1. SHA-256 hash → skip if duplicate
-2. `parse_csv()` → `Txn` objects
-3. New `external_id` → insert
-4. Existing + changed values → overwrite row
-5. Existing + same values → skip
+| `core/` | Parse, normalize, match, compare — **no DB imports** |
+| `db/` | SQLite persistence |
+| `services/` | Orchestrates core + db |
+| `app.py` | HTTP routes + HTML |
 
 ---
 
 ## Database (5 tables)
 
-| Table | Model class | Purpose |
-|---|---|---|
-| `source_files` | `SourceFile` | uploaded files, hash for dedup |
-| `transactions` | `TxnRow` | current normalized rows |
-| `reconciliation_runs` | `Run` | each daily run |
-| `match_results` | `MatchRow` | results + `field_diffs_json` |
-| `manual_resolutions` | `Resolution` | persistent manual decisions |
-
-Field diffs stored as JSON on `match_results.field_diffs_json` — no separate diffs table.
-
-Correction files overwrite the current row in `transactions` — no audit history table (kept simple for 5–6 hour scope).
+| Table | Purpose |
+|---|---|
+| `source_files` | Uploaded CSVs, SHA-256 hash for dedup |
+| `transactions` | Current normalized rows (one per trade ID) |
+| `reconciliation_runs` | Each daily run |
+| `match_results` | Results + field diffs as JSON |
+| `manual_resolutions` | Persistent manual match / accept orphan |
 
 ---
 
-## Matching logic (`matcher.py`)
+## Matching logic
 
 ```
-1. skip cancelled rows
-2. apply manual pairs first
-3. auto-match by external_id
-4. fuzzy-match leftovers (same instrument + side + qty + time)
-5. mark remaining as unmatched or accepted orphan
+1. Skip cancelled rows
+2. Apply manual pairs first
+3. Auto-match by external_id (trade_id / reference)
+4. Fuzzy-match leftovers (instrument + side + qty + time)
+5. Mark remaining as unmatched or accepted orphan
 ```
 
-### Tolerances (`config.py`)
-
-```python
-Tolerance(amt_abs=0.01, amt_pct=0.001, qty_abs=0.001, time_mins=60)
-```
+### Tolerances
 
 | Field | Rule |
 |---|---|
-| instrument, side | exact |
+| instrument, side | exact match |
 | quantity | ±0.001 |
 | price, gross_amount | ±$0.01 or ±0.1% |
 | traded_at | ±60 minutes |
 
 ---
 
-## Design Decisions
+## Manual features (assignment requirement)
 
-| Area | Decision | Why |
+| Action | When | How |
 |---|---|---|
-| Match key | `external_id` first, fuzzy fallback | reliable + handles different IDs |
-| Cancelled rows | excluded from matching | not meant to be compared |
-| Duplicate files | SHA-256 hash | same content = skip |
-| Corrections | overwrite current row | simple, fixed values win |
-| Manual decisions | `manual_resolutions` table | must hold tomorrow |
-| Field diffs | JSON on match row | fewer tables, same UI |
-| UI | server-rendered Flask | assignment allows it |
-| Auth | none | single operator, out of scope |
+| **Manual match** | Same trade, different IDs | Manual Match screen → pick both → Match Selected |
+| **Accept orphan** | Row truly has no pair | Manual Match screen → Accept as Orphan |
+| **Persistence** | Decisions hold tomorrow | Saved in `manual_resolutions`, loaded every run |
 
 ---
 
-## What Was Left Out
+## Design decisions
 
-- User authentication
-- REST API / SPA frontend
+| Decision | Why |
+|---|---|
+| Match by `external_id` first | Most reliable key from assignment example |
+| Fuzzy match as fallback | Handles different IDs (e.g. C-9001) |
+| Cancelled rows excluded | Assignment: "never meant to be compared" |
+| SHA-256 dedup | Same file sent twice → skip |
+| Corrections overwrite row | Fixed values win; kept simple (no audit table) |
+| Field diffs as JSON | Fewer tables, same UI functionality |
+| 5 tables not 7 | Scoped for 5–6 hour take-home |
+| Server-rendered Flask | Assignment says plain pages are fine |
+| No auth | Single operator, out of scope |
+
+---
+
+## What was left out
+
+- User authentication / multi-user
+- REST API / React frontend
 - SFTP / webhook file ingestion
 - Export to Excel/PDF
 - Background job queue
@@ -198,55 +251,67 @@ Tolerance(amt_abs=0.01, amt_pct=0.001, qty_abs=0.001, time_mins=60)
 
 ---
 
-## What I Would Do Next
+## What I would do next
 
-1. Unit tests for `parse_csv`, `match`, `compare`, upload dedup
-2. Sample CSV files in `data/` for demo video
-3. Correction history table + UI
-4. Configurable tolerances per instrument
-5. PostgreSQL for production
-6. Scheduled morning runs via cron
-
----
-
-## Challenges Faced
-
-1. **Python 3.9 + SQLAlchemy** — `Mapped[int | None]` fails at runtime; used `Optional[int]` instead
-2. **Windows pip** — SQLAlchemy tried to compile `greenlet`; fixed with prebuilt wheels
-3. **Scope vs completeness** — trimmed from 7 tables to 5, merged 3 service files into 1
-4. **Correction handling** — overwrite instead of full audit trail to stay within time box
-5. **Cancelled rows** — parsed and stored but filtered out before matching
+1. Correction history table + UI ("what did the row used to say?")
+2. Configurable tolerances per instrument
+3. PostgreSQL for production
+4. Scheduled morning runs via cron
+5. Plugin registry for new CSV formats
 
 ---
 
-## CSV Formats
+## Challenges faced
 
-**Ledger:**
+1. **Python 3.9 + SQLAlchemy** — used `Optional[int]` instead of `int | None` in models
+2. **Windows pip** — SQLAlchemy/greenlet compile error; use prebuilt wheels
+3. **Scope** — trimmed 7 tables → 5, merged services into one file
+4. **Correction handling** — overwrite row instead of full audit trail
+5. **Cancelled vs unmatched** — cancelled filtered before matching, not shown in results
+
+---
+
+## CSV formats
+
+**Ledger (our system):**
 ```
 trade_id,traded_at,instrument,side,quantity,price,gross_amount,state
 T-1001,2025-07-01T09:15:00Z,BTC-USD,BUY,0.50,62000.00,31000.00,SETTLED
 ```
 
-**Statement:**
+**Statement (counterparty):**
 ```
 reference,executed_at,symbol,direction,qty,unit_price,total,status
 T-1001,2025-07-01 09:15:00,BTC-USD,B,0.5,62000,31000.00,SETTLED
 ```
 
-| Txn field | Ledger col | Statement col |
+| Txn field | Ledger column | Statement column |
 |---|---|---|
 | external_id | trade_id | reference |
-| traded_at | traded_at | executed_at |
+| traded_at | traded_at (ISO) | executed_at |
 | instrument | instrument | symbol |
-| side | side (BUY/SELL) | direction (B/S) |
+| side | BUY/SELL | B/S |
 | quantity | quantity | qty |
 | price | price | unit_price |
 | gross_amount | gross_amount | total |
 | state | state | status |
 
-Side mapping: `B` → `BUY`, `S` → `SELL`  
-State mapping: `VOID` / `CANCELED` → `CANCELLED`
+New format = new parser class in `parsers.py`. Rest of system unchanged.
 
 ---
 
+## Troubleshooting
 
+| Problem | Fix |
+|---|---|
+| `ModuleNotFoundError: flask` | `pip install -r requirements.txt` |
+| SQLAlchemy install fails on Windows | `pip install sqlalchemy --only-binary :all:` |
+| `BuildError: endpoint 'upload'` | Restart app after latest code pull |
+| Old/stale data | Delete `reconciliation.db` and restart app |
+| Port 5000 in use | Change port in `app.py`: `app.run(port=5001)` |
+
+---
+
+## License
+
+Take-home assignment submission.
