@@ -3,102 +3,68 @@ from __future__ import annotations
 import csv
 import io
 from abc import ABC, abstractmethod
-from typing import Iterable
 
-from reconciliation.core.canonical import CanonicalTransaction, SourceSystem
-from reconciliation.core.normalizer import (
-  normalize_side,
-  normalize_state,
-  parse_datetime,
-  parse_decimal,
-)
+from reconciliation.core.canonical import Source, Txn
+from reconciliation.core.normalizer import norm_side, norm_state, parse_dec, parse_dt
 
 
-class BaseParser(ABC):
-  """Adapter interface — add a new parser for each incoming file format."""
-
-  source_system: SourceSystem
+class Parser(ABC):
+  source: Source
 
   @abstractmethod
-  def parse_row(self, row: dict[str, str], source_file: str) -> CanonicalTransaction:
-    raise NotImplementedError
+  def row(self, r: dict[str, str], fname: str) -> Txn:
+    ...
 
-  def parse_csv(self, csv_text: str, source_file: str = "") -> list[CanonicalTransaction]:
-    reader = csv.DictReader(io.StringIO(csv_text.strip()))
-    return [self.parse_row(row, source_file) for row in reader]
+  def csv(self, text: str, fname: str = "") -> list[Txn]:
+    return [self.row(r, fname) for r in csv.DictReader(io.StringIO(text.strip()))]
 
 
-class LedgerParser(BaseParser):
-  """
-  Our ledger format:
-  trade_id, traded_at, instrument, side, quantity, price, gross_amount, state
-  """
+class LedgerParser(Parser):
+  source = Source.LEDGER
 
-  source_system = SourceSystem.LEDGER
-
-  def parse_row(self, row: dict[str, str], source_file: str) -> CanonicalTransaction:
-    return CanonicalTransaction(
-      source=self.source_system,
-      external_id=row["trade_id"].strip(),
-      traded_at=parse_datetime(row["traded_at"]),
-      instrument=row["instrument"].strip(),
-      side=normalize_side(row["side"]),
-      quantity=parse_decimal(row["quantity"]),
-      price=parse_decimal(row["price"]),
-      gross_amount=parse_decimal(row["gross_amount"]),
-      state=normalize_state(row["state"]),
-      source_file=source_file,
-      raw_row=dict(row),
+  def row(self, r: dict[str, str], fname: str) -> Txn:
+    return Txn(
+      source=self.source,
+      external_id=r["trade_id"].strip(),
+      traded_at=parse_dt(r["traded_at"]),
+      instrument=r["instrument"].strip(),
+      side=norm_side(r["side"]),
+      quantity=parse_dec(r["quantity"]),
+      price=parse_dec(r["price"]),
+      gross_amount=parse_dec(r["gross_amount"]),
+      state=norm_state(r["state"]),
+      source_file=fname,
+      raw_row=dict(r),
     )
 
 
-class StatementParser(BaseParser):
-  """
-  Counterparty statement format:
-  reference, executed_at, symbol, direction, qty, unit_price, total, status
-  """
+class StatementParser(Parser):
+  source = Source.STATEMENT
 
-  source_system = SourceSystem.STATEMENT
-
-  def parse_row(self, row: dict[str, str], source_file: str) -> CanonicalTransaction:
-    return CanonicalTransaction(
-      source=self.source_system,
-      external_id=row["reference"].strip(),
-      traded_at=parse_datetime(row["executed_at"]),
-      instrument=row["symbol"].strip(),
-      side=normalize_side(row["direction"]),
-      quantity=parse_decimal(row["qty"]),
-      price=parse_decimal(row["unit_price"]),
-      gross_amount=parse_decimal(row["total"]),
-      state=normalize_state(row["status"]),
-      source_file=source_file,
-      raw_row=dict(row),
+  def row(self, r: dict[str, str], fname: str) -> Txn:
+    return Txn(
+      source=self.source,
+      external_id=r["reference"].strip(),
+      traded_at=parse_dt(r["executed_at"]),
+      instrument=r["symbol"].strip(),
+      side=norm_side(r["direction"]),
+      quantity=parse_dec(r["qty"]),
+      price=parse_dec(r["unit_price"]),
+      gross_amount=parse_dec(r["total"]),
+      state=norm_state(r["status"]),
+      source_file=fname,
+      raw_row=dict(r),
     )
 
 
-PARSER_REGISTRY: dict[SourceSystem, BaseParser] = {
-  SourceSystem.LEDGER: LedgerParser(),
-  SourceSystem.STATEMENT: StatementParser(),
-}
+PARSERS = {Source.LEDGER: LedgerParser(), Source.STATEMENT: StatementParser()}
 
 
-def get_parser(source: SourceSystem) -> BaseParser:
-  parser = PARSER_REGISTRY.get(source)
-  if parser is None:
-    raise ValueError(f"No parser registered for source: {source}")
-  return parser
+def parse_csv(source: Source, text: str, fname: str = "") -> list[Txn]:
+  return PARSERS[source].csv(text, fname)
 
 
-def parse_csv(source: SourceSystem, csv_text: str, source_file: str = "") -> list[CanonicalTransaction]:
-  """Parse a CSV string for the given source system."""
-  return get_parser(source).parse_csv(csv_text, source_file)
-
-
-def parse_transactions(
-  source: SourceSystem,
-  rows: Iterable[dict[str, str]],
-  source_file: str = "",
-) -> list[CanonicalTransaction]:
-  """Parse already-loaded CSV rows (useful for tests)."""
-  parser = get_parser(source)
-  return [parser.parse_row(row, source_file) for row in rows]
+# aliases
+BaseParser = Parser
+get_parser = lambda s: PARSERS[s]
+parse_transactions = lambda source, rows, fname="": [PARSERS[source].row(r, fname) for r in rows]
