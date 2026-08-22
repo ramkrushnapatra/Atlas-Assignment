@@ -3,53 +3,45 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
-from dateutil import parser as date_parser
+from dateutil import parser as dp
 
-from reconciliation.core.canonical import TransactionState
+from reconciliation.core.canonical import TxnState
 
-SIDE_MAP = {
-  "B": "BUY",
-  "BUY": "BUY",
-  "S": "SELL",
-  "SELL": "SELL",
-}
-
-STATE_MAP = {
-  "SETTLED": TransactionState.SETTLED,
-  "CANCELLED": TransactionState.CANCELLED,
-  "CANCELED": TransactionState.CANCELLED,
-  "PENDING": TransactionState.PENDING,
-  "VOID": TransactionState.CANCELLED,
+SIDES = {"B": "BUY", "BUY": "BUY", "S": "SELL", "SELL": "SELL"}
+STATES = {
+  "SETTLED": TxnState.SETTLED,
+  "CANCELLED": TxnState.CANCELLED,
+  "CANCELED": TxnState.CANCELLED,
+  "PENDING": TxnState.PENDING,
+  "VOID": TxnState.CANCELLED,
 }
 
 
-def parse_datetime(value: str) -> datetime:
-  """Parse dates from multiple formats and return UTC-aware datetime."""
-  dt = date_parser.parse(value.strip())
-  if dt.tzinfo is None:
-    return dt.replace(tzinfo=timezone.utc)
-  return dt.astimezone(timezone.utc)
+def parse_dt(val: str) -> datetime:
+  dt = dp.parse(val.strip())
+  return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
 
-def parse_decimal(value: str | int | float) -> Decimal:
-  """Convert numeric strings to Decimal for precise money math."""
+def parse_dec(val: str | int | float) -> Decimal:
   try:
-    return Decimal(str(value).strip())
-  except (InvalidOperation, ValueError) as exc:
-    raise ValueError(f"Invalid decimal value: {value!r}") from exc
+    return Decimal(str(val).strip())
+  except (InvalidOperation, ValueError) as e:
+    raise ValueError(f"bad decimal: {val!r}") from e
 
 
-def normalize_side(value: str) -> str:
-  """Map source-specific side codes to BUY or SELL."""
-  normalized = SIDE_MAP.get(value.strip().upper())
-  if normalized is None:
-    raise ValueError(f"Unknown side value: {value!r}")
-  return normalized
+def norm_side(val: str) -> str:
+  s = SIDES.get(val.strip().upper())
+  if not s:
+    raise ValueError(f"unknown side: {val!r}")
+  return s
 
 
-def normalize_state(value: str) -> TransactionState:
-  """Map source-specific status values to a canonical state."""
-  normalized = STATE_MAP.get(value.strip().upper())
-  if normalized is None:
-    return TransactionState.UNKNOWN
-  return normalized
+def norm_state(val: str) -> TxnState:
+  return STATES.get(val.strip().upper(), TxnState.UNKNOWN)
+
+
+# aliases
+parse_datetime = parse_dt
+parse_decimal = parse_dec
+normalize_side = norm_side
+normalize_state = norm_state
