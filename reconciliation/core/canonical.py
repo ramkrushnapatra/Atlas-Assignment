@@ -7,97 +7,98 @@ from enum import Enum
 from typing import Any
 
 
-class SourceSystem(str, Enum):
+class Source(str, Enum):
   LEDGER = "ledger"
   STATEMENT = "statement"
 
 
-class TransactionState(str, Enum):
+class TxnState(str, Enum):
   SETTLED = "SETTLED"
   CANCELLED = "CANCELLED"
   PENDING = "PENDING"
   UNKNOWN = "UNKNOWN"
 
 
-class MatchStatus(str, Enum):
-  MATCHED_OK = "matched_ok"
-  MATCHED_WITH_DIFFERENCES = "matched_with_differences"
-  UNMATCHED_LEDGER = "unmatched_ledger"
-  UNMATCHED_STATEMENT = "unmatched_statement"
-  MANUALLY_MATCHED = "manually_matched"
-  ACCEPTED_ORPHAN = "accepted_orphan"
+class Status(str, Enum):
+  OK = "matched_ok"
+  DIFF = "matched_with_differences"
+  UNMATCHED_L = "unmatched_ledger"
+  UNMATCHED_S = "unmatched_statement"
+  MANUAL = "manually_matched"
+  ORPHAN = "accepted_orphan"
 
 
 @dataclass(frozen=True)
-class CanonicalTransaction:
-  """Normalized transaction — same shape regardless of source format."""
-
-  source: SourceSystem
+class Txn:
+  source: Source
   external_id: str
   traded_at: datetime
   instrument: str
-  side: str  # BUY or SELL
+  side: str
   quantity: Decimal
   price: Decimal
   gross_amount: Decimal
-  state: TransactionState
+  state: TxnState
   source_file: str = ""
   raw_row: dict[str, Any] = field(default_factory=dict, compare=False)
 
   @property
-  def is_cancelled(self) -> bool:
-    return self.state == TransactionState.CANCELLED
+  def cancelled(self) -> bool:
+    return self.state == TxnState.CANCELLED
 
 
 @dataclass(frozen=True)
 class FieldDiff:
-  field_name: str
-  ledger_value: Any
-  statement_value: Any
-  difference: Any = None
-  within_tolerance: bool = False
+  field: str
+  ledger_val: Any
+  statement_val: Any
+  diff: Any = None
+  ok: bool = False
 
 
 @dataclass
-class MatchResult:
-  status: MatchStatus
-  ledger: CanonicalTransaction | None = None
-  statement: CanonicalTransaction | None = None
-  field_diffs: list[FieldDiff] = field(default_factory=list)
-  match_key: str | None = None
-  is_manual: bool = False
+class Match:
+  status: Status
+  ledger: Txn | None = None
+  statement: Txn | None = None
+  diffs: list[FieldDiff] = field(default_factory=list)
+  key: str | None = None
+  manual: bool = False
 
 
 @dataclass
-class ReconciliationResult:
-  matches: list[MatchResult]
+class RunResult:
+  matches: list[Match]
   run_at: datetime = field(default_factory=datetime.utcnow)
 
-  @property
-  def matched_ok(self) -> list[MatchResult]:
-    return [m for m in self.matches if m.status == MatchStatus.MATCHED_OK]
+  def _filter(self, status: Status) -> list[Match]:
+    return [m for m in self.matches if m.status == status]
 
   @property
-  def matched_with_differences(self) -> list[MatchResult]:
-    return [m for m in self.matches if m.status == MatchStatus.MATCHED_WITH_DIFFERENCES]
+  def ok(self) -> list[Match]:
+    return self._filter(Status.OK)
 
   @property
-  def unmatched_ledger(self) -> list[MatchResult]:
-    return [m for m in self.matches if m.status == MatchStatus.UNMATCHED_LEDGER]
+  def with_diffs(self) -> list[Match]:
+    return self._filter(Status.DIFF)
 
   @property
-  def unmatched_statement(self) -> list[MatchResult]:
-    return [m for m in self.matches if m.status == MatchStatus.UNMATCHED_STATEMENT]
+  def unmatched_l(self) -> list[Match]:
+    return self._filter(Status.UNMATCHED_L)
 
   @property
-  def needs_attention(self) -> list[MatchResult]:
-    return [
-      m
-      for m in self.matches
-      if m.status
-      in (
-        MatchStatus.MATCHED_WITH_DIFFERENCES,
-        MatchStatus.UNMATCHED_LEDGER,
-        MatchStatus.UNMATCHED_STATEMENT,
-      )
-    ]
+  def unmatched_s(self) -> list[Match]:
+    return self._filter(Status.UNMATCHED_S)
+
+  @property
+  def attention(self) -> list[Match]:
+    return [m for m in self.matches if m.status in (Status.DIFF, Status.UNMATCHED_L, Status.UNMATCHED_S)]
+
+
+# aliases for imports that still use old names
+SourceSystem = Source
+TransactionState = TxnState
+MatchStatus = Status
+CanonicalTransaction = Txn
+MatchResult = Match
+ReconciliationResult = RunResult
